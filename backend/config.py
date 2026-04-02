@@ -1,5 +1,5 @@
 HOST = "0.0.0.0"
 PORT = 6543
 DATABASE_PATH = "ghostchat_database.db"
-ID_LENGTH = 32
+ID_LENGTH = 16
 MESSAGES_PER_SECOND = 10

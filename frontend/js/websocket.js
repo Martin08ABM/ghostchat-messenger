@@ -1,11 +1,13 @@
 let websocket = null;
 let callback = null;
+let onOpenCallback = null;
 
 function connect(url) {
   websocket = new WebSocket(url)
 
   websocket.onopen = function() {
     console.log("Websocket runs successfully");
+    if (onOpenCallback) onOpenCallback();
   }
   websocket.onmessage = function(event) {
     const parsed = JSON.parse(event.data);
@@ -51,4 +53,8 @@ function onMessage(cb) {
   callback = cb;
 }
 
-window.WS = { connect, send, register, login, refreshId, sendMessage, ping, onMessage }
+function onOpen(cb) {
+  onOpenCallback = cb;
+}
+
+window.WS = { connect, send, register, login, refreshId, sendMessage, ping, onMessage, onOpen }

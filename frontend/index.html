@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <title>Ghostchat Messenger | Keep your messages private</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="./css/styles.css">
+</head>
+<body>
+
+  <!-- Header here we can see our identity -->
+  <header id="top-bar">
+    <div id="identity">
+      <span id="identity-label">Your code:</span>
+      <span id="my-id">-</span>
+      <button id="btn-copy">Copy</button>
+      <button id="btn-refresh">Refresh</button>
+    </div>
+    <span id="status">Disconnected</span>
+  </header>
+
+  <!-- Conection zone with peer -->
+  <div id="peer-section">
+    <input type="text" id="peer-input" placeholder="Contact code" autocomplete="off">
+    <button id="btn-connect-peer">Connect</button>
+  </div>
+
+  <!-- Messages area -->
+  <main id="messages"></main>
+
+  <!-- Send messages -->
+  <form id="message-form">
+    <input type="text" id="message-input" placeholder="Write a messaje..." autocomplete="off">
+    <button type="submit" id="btn-send">Send</button>
+  </form>
+
+  <script src="/js/websocket.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>

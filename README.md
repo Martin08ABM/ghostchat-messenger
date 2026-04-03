@@ -1,54 +1,54 @@
 # GhostChat Messenger
 
-**Chat cifrado E2E zero-knowledge.** El servidor es un cartero ciego: enruta mensajes que no puede leer y los purga tras la entrega. Sin nombre, sin email, sin teléfono. Solo un código aleatorio.
+**E2E encrypted zero-knowledge chat.** The server is a blind courier: it routes messages it cannot read and purges them after delivery. No name, no email, no phone number. Just a random code.
 
 ---
 
-## Concepto
+## Concept
 
-GhostChat es un sistema de mensajería donde la privacidad no es una promesa, es una limitación técnica. El servidor **no puede** leer tus mensajes porque están cifrados en tu navegador antes de salir. El servidor **no puede** saber quién eres porque tu identidad es un código aleatorio sin datos asociados. Y el servidor **no puede** recordar tus conversaciones porque purga todo tras la entrega.
+GhostChat is a messaging system where privacy is not a promise — it's a technical limitation. The server **cannot** read your messages because they are encrypted in your browser before they leave. The server **cannot** know who you are because your identity is a random code with no associated data. And the server **cannot** remember your conversations because it purges everything after delivery.
 
 ---
 
 ## Stack
 
-| Capa | Tecnología | Responsabilidad |
-|------|-----------|-----------------|
-| Frontend | HTML + CSS + JS vanilla | UI, cifrado E2E (Web Crypto API), gestión de identidad |
-| Backend | Python + FastAPI | Enrutamiento de mensajes, WebSocket, purga, rate limiting |
-| Base de datos | SQLite | Solo almacena códigos de identidad (nada más) |
+| Layer | Technology | Responsibility |
+|-------|-----------|----------------|
+| Frontend | HTML + CSS + Vanilla JS | UI, E2E encryption (Web Crypto API), identity management |
+| Backend | Python + FastAPI | Message routing, WebSocket, purge, rate limiting |
+| Database | SQLite | Stores identity codes only (nothing else) |
 
 ---
 
-## Arquitectura
+## Architecture
 
 ```mermaid
 graph TB
-    subgraph Frontend A ["Frontend (Navegador A)"]
-        UI_A[UI Chat]
+    subgraph Frontend A ["Frontend (Browser A)"]
+        UI_A[Chat UI]
         CRYPTO_A[Web Crypto API<br/>ECDH + AES-256-GCM]
-        ID_A[Identidad<br/>Código 16 chars]
+        ID_A[Identity<br/>16-char code]
     end
 
     subgraph Backend ["Backend (Python + FastAPI)"]
-        ROUTER[Router WebSocket]
-        PURGE[Purga post-entrega]
-        SESSIONS[Sesiones + Rate Limit]
-        DB[(SQLite<br/>Solo IDs)]
+        ROUTER[WebSocket Router]
+        PURGE[Post-delivery Purge]
+        SESSIONS[Sessions + Rate Limit]
+        DB[(SQLite<br/>IDs only)]
     end
 
-    subgraph Frontend B ["📱 Frontend (Navegador B)"]
-        UI_B[UI Chat]
+    subgraph Frontend B ["Frontend (Browser B)"]
+        UI_B[Chat UI]
         CRYPTO_B[Web Crypto API<br/>ECDH + AES-256-GCM]
-        ID_B[Identidad<br/>Código 16 chars]
+        ID_B[Identity<br/>16-char code]
     end
 
     UI_A --> CRYPTO_A
-    CRYPTO_A -->|"Blob cifrado"| ROUTER
+    CRYPTO_A -->|"Encrypted blob"| ROUTER
     ROUTER --> SESSIONS
     ROUTER --> PURGE
     SESSIONS --> DB
-    ROUTER -->|"Blob cifrado"| CRYPTO_B
+    ROUTER -->|"Encrypted blob"| CRYPTO_B
     CRYPTO_B --> UI_B
 
     style PURGE fill:#ff6b6b,color:#fff
@@ -57,24 +57,24 @@ graph TB
     style DB fill:#f39c12,color:#fff
 ```
 
-### Responsabilidades
+### Responsibilities
 
 **Frontend (HTML + CSS + JS)**
-- Interfaz de chat responsive (PC + móvil)
-- Cifrado/descifrado E2E con Web Crypto API (ECDH para claves, AES-256-GCM para mensajes)
-- Gestión del código de identidad (mostrar, copiar, refrescar)
-- Empaquetado de mensajes: header en claro (destinatario) + payload cifrado (blob opaco)
+- Responsive chat interface (desktop + mobile)
+- E2E encryption/decryption with Web Crypto API (ECDH for key exchange, AES-256-GCM for messages)
+- Identity code management (display, copy, refresh)
+- Message packaging: plaintext header (recipient) + encrypted payload (opaque blob)
 
 **Backend (Python + FastAPI)**
-- Gestión de conexiones WebSocket (registro de código ↔ socket en memoria)
-- Enrutamiento: lee el campo `to` del header, reenvía el blob al destinatario
-- Purga inmediata: tras entregar (o fallar), borra el mensaje de memoria
-- Generación de códigos de identidad + almacenamiento en SQLite
-- Presencia online/offline
-- Rate limiting y validación de formato
+- WebSocket connection management (code ↔ socket mapping in memory)
+- Routing: reads the `to` field from the header, forwards the blob to the recipient
+- Immediate purge: after delivery (or failure), all references to the message are wiped from memory
+- Identity code generation + storage in SQLite
+- Online/offline presence
+- Rate limiting and format validation
 
 **SQLite**
-- Una sola tabla con dos columnas. Nada más.
+- A single table. Nothing more.
 
 ```
 ┌─────────────────────────────┐
@@ -87,200 +87,200 @@ graph TB
 
 ---
 
-## Flujo de un mensaje
+## Message flow
 
 ```mermaid
 sequenceDiagram
-    participant A as Usuario A<br/>(Navegador)
-    participant S as Servidor<br/>(FastAPI)
-    participant B as Usuario B<br/>(Navegador)
+    participant A as User A<br/>(Browser)
+    participant S as Server<br/>(FastAPI)
+    participant B as User B<br/>(Browser)
 
-    Note over A: Escribe mensaje
+    Note over A: Types a message
 
-    A->>A: Web Crypto cifra con AES-256-GCM<br/>(clave compartida ECDH + nonce único)
+    A->>A: Web Crypto encrypts with AES-256-GCM<br/>(ECDH shared key + unique nonce)
 
-    A->>S: { to: "x9Km...", payload: "blob cifrado" }
+    A->>S: { to: "x9Km...", payload: "encrypted blob" }
 
-    Note over S: Lee solo el campo "to"<br/>No toca el payload
+    Note over S: Reads only the "to" field<br/>Does not touch the payload
 
-    S->>B: { from: "a7Xk...", payload: "blob cifrado" }
+    S->>B: { from: "a7Xk...", payload: "encrypted blob" }
 
-    Note over S: PURGA TOTAL<br/>Borra mensaje + metadata
+    Note over S: FULL PURGE<br/>Deletes message + metadata
 
-    B->>B: Web Crypto descifra con AES-256-GCM<br/>(clave compartida ECDH + nonce)
+    B->>B: Web Crypto decrypts with AES-256-GCM<br/>(ECDH shared key + nonce)
 
-    Note over B: Lee el mensaje
+    Note over B: Reads the message
 ```
 
-### Paso a paso
+### Step by step
 
-1. **Usuario A escribe** un mensaje en su navegador. El texto existe solo en el DOM.
-2. **Web Crypto cifra** el mensaje con AES-256-GCM usando la clave compartida ECDH y un nonce único de 12 bytes.
-3. **El frontend empaqueta** el mensaje en un JSON con header en claro (`to`, `type`) y payload opaco (blob cifrado + nonce).
-4. **El backend recibe** el paquete por WebSocket. Lee solo `to`, busca el WebSocket del destinatario.
-5. **El backend reenvía** el paquete completo sin modificar ni copiar nada.
-6. **El backend purga** toda referencia al mensaje de su memoria. No queda rastro.
-7. **El frontend de B recibe** el blob cifrado.
-8. **Web Crypto descifra** usando la clave compartida y el nonce. El texto aparece en el navegador de B.
+1. **User A types** a message in the browser. The text exists only in the DOM.
+2. **Web Crypto encrypts** the message with AES-256-GCM using the ECDH shared key and a unique 12-byte nonce.
+3. **The frontend packages** the message into a JSON with a plaintext header (`to`, `type`) and an opaque payload (encrypted blob + nonce).
+4. **The backend receives** the package over WebSocket. Reads only `to`, looks up the recipient's WebSocket.
+5. **The backend forwards** the full package without modifying or copying anything.
+6. **The backend purges** all references to the message from memory. No trace remains.
+7. **User B's frontend receives** the encrypted blob.
+8. **Web Crypto decrypts** using the shared key and nonce. The text appears in B's browser.
 
 ---
 
-## Handshake criptográfico (ECDH)
+## Cryptographic handshake (ECDH)
 
-Antes de chatear, ambos usuarios necesitan establecer una clave compartida.
+Before chatting, both users need to establish a shared key.
 
 ```mermaid
 sequenceDiagram
-    participant A as Usuario A
-    participant S as Servidor
-    participant B as Usuario B
+    participant A as User A
+    participant S as Server
+    participant B as User B
 
-    Note over A: Genera par ECDH<br/>(pública + privada)
-    Note over B: Genera par ECDH<br/>(pública + privada)
+    Note over A: Generates ECDH key pair<br/>(public + private)
+    Note over B: Generates ECDH key pair<br/>(public + private)
 
-    A->>S: Clave pública de A → para B
-    S->>B: Clave pública de A
+    A->>S: A's public key → for B
+    S->>B: A's public key
 
-    B->>S: Clave pública de B → para A
-    S->>A: Clave pública de B
+    B->>S: B's public key → for A
+    S->>A: B's public key
 
-    Note over A: ECDH: privada_A + pública_B<br/>= clave compartida
-    Note over B: ECDH: privada_B + pública_A<br/>= clave compartida
+    Note over A: ECDH: private_A + public_B<br/>= shared key
+    Note over B: ECDH: private_B + public_A<br/>= shared key
 
-    Note over A,B: Ambos tienen la misma clave<br/>El servidor nunca la tuvo
+    Note over A,B: Both have the same key<br/>The server never had it
 ```
 
-- Las claves privadas **nunca** salen del navegador.
-- El servidor solo reenvía las claves públicas (no puede derivar el secreto sin la privada).
-- Las claves son **efímeras**: nuevas en cada sesión → perfect forward secrecy.
-- La clave compartida se usa para derivar (HKDF-SHA256) la clave AES-256-GCM.
+- Private keys **never** leave the browser.
+- The server only forwards public keys (it cannot derive the secret without the private key).
+- Keys are **ephemeral**: new ones each session → perfect forward secrecy.
+- The shared key is used to derive (HKDF-SHA256) the AES-256-GCM key.
 
 ---
 
-## Sistema de identidad
+## Identity system
 
-### Sin datos personales
+### No personal data
 
-No hay registro con email, teléfono ni nombre. Al acceder por primera vez:
+No registration with email, phone, or name. On first access:
 
-1. El backend genera un código aleatorio de 16 caracteres alfanuméricos (`a-z, A-Z, 0-9`).
-2. Lo verifica contra SQLite para evitar colisiones (62^16 ≈ 4.7 × 10²⁸ combinaciones).
-3. Lo devuelve al usuario. Es su única identidad.
+1. The backend generates a random 16-character alphanumeric code (`a-z, A-Z, 0-9`).
+2. It checks SQLite for collisions (62^16 ≈ 4.7 × 10²⁸ combinations).
+3. It returns the code to the user. That is their only identity.
 
-### Compartir el código
+### Sharing the code
 
-Para chatear con alguien, necesitas su código. Se comparte por un canal externo: en persona, otro chat, papel, QR. El servidor no facilita descubrimiento de contactos.
+To chat with someone, you need their code. It is shared through an external channel: in person, another chat, paper, QR. The server does not facilitate contact discovery.
 
-### Refrescar el código
+### Refreshing the code
 
 ```mermaid
 graph LR
-    A[Código actual<br/>a7Xk9mP2qL4nR8wB] -->|"Click 'Refrescar'"| B[Backend genera<br/>nuevo código]
-    B --> C[Borra viejo<br/>de SQLite]
-    C --> D[Nuevo código<br/>mQ3rK8vN2pL5wX7j]
+    A[Current code<br/>a7Xk9mP2qL4nR8wB] -->|"Click 'Refresh'"| B[Backend generates<br/>new code]
+    B --> C[Deletes old one<br/>from SQLite]
+    C --> D[New code<br/>mQ3rK8vN2pL5wX7j]
 
     style A fill:#ff6b6b,color:#fff
     style D fill:#2ecc71,color:#fff
 ```
 
-- **Botón de pánico:** si sientes que tu código está comprometido, lo refrescas y cortas todo vínculo anterior.
-- **Tú decides:** código fijo (cómodo) o refrescable (privado). El equilibrio está en tus manos.
+- **Panic button:** if you feel your code is compromised, refresh it and cut all previous links.
+- **Your choice:** fixed code (convenient) or refreshable (private). The balance is in your hands.
 
 ---
 
-## Modelo de privacidad
+## Privacy model
 
-### Lo que el servidor sabe
+### What the server knows
 
-| Momento | Información |
-|---------|-------------|
-| Durante el envío | Código A envía algo a código B (header `to` en claro) |
-| Durante el envío | Tamaño aproximado del mensaje (longitud del blob) |
-| Siempre | Qué códigos están conectados ahora |
+| Moment | Information |
+|--------|-------------|
+| During sending | Code A sends something to code B (plaintext `to` header) |
+| During sending | Approximate message size (blob length) |
+| Always | Which codes are currently connected |
 
-### Lo que el servidor NO sabe (nunca)
+### What the server does NOT know (ever)
 
-| Información | Razón |
-|-------------|-------|
-| Quién es cada código | No hay datos personales asociados |
-| Contenido del mensaje | Cifrado E2E, solo los extremos tienen la clave |
-| Historial de conversaciones | Purga post-entrega |
-| Quién habló con quién en el pasado | No hay logs |
+| Information | Reason |
+|-------------|--------|
+| Who each code belongs to | No personal data associated |
+| Message content | E2E encrypted, only the endpoints have the key |
+| Conversation history | Post-delivery purge |
+| Who talked to whom in the past | No logs |
 
-### Tras la entrega
+### After delivery
 
-- El mensaje se purga de memoria inmediatamente.
-- No se escribe nada a disco (ni logs, ni cache, ni temp).
-- SQLite solo contiene códigos sin contexto.
-- **Si alguien toma control del servidor → solo encuentra una lista de strings aleatorios.**
+- The message is purged from memory immediately.
+- Nothing is written to disk (no logs, no cache, no temp files).
+- SQLite contains only codes with no context.
+- **If someone takes control of the server → they find only a list of random strings.**
 
 ---
 
-## Formato de paquete
+## Packet format
 
 ```json
 {
   "to": "x9Km4pQ7rL2nW8vB",
   "from": "a7Xk9mP2qL4nR8wB",
   "type": "text",
-  "payload": "<base64 del blob cifrado>",
-  "nonce": "<base64 del IV de 12 bytes>",
+  "payload": "<base64 of encrypted blob>",
+  "nonce": "<base64 of 12-byte IV>",
   "timestamp": 1700000000000
 }
 ```
 
-El backend lee: `to`, `from`, `type`.
-El backend **no toca**: `payload`, `nonce`.
+The backend reads: `to`, `from`, `type`.
+The backend **does not touch**: `payload`, `nonce`.
 
-### Tipos de mensaje
+### Message types
 
-| Tipo | Descripción | Payload cifrado |
-|------|-------------|:---:|
-| `key_exchange` | Clave pública ECDH para handshake | ❌ |
-| `text` | Mensaje de texto | ✅ |
-| `file_meta` | Metadata de archivo (nombre, tamaño, MIME) | ✅ |
-| `file_chunk` | Chunk de archivo binario | ✅ |
+| Type | Description | Encrypted payload |
+|------|-------------|:-----------------:|
+| `key_exchange` | ECDH public key for handshake | ❌ |
+| `text` | Text message | ✅ |
+| `file_meta` | File metadata (name, size, MIME) | ✅ |
+| `file_chunk` | Binary file chunk | ✅ |
 | `ping` | Keep-alive | ❌ |
-| `disconnect` | Aviso de desconexión | ❌ |
+| `disconnect` | Disconnection notice | ❌ |
 
 ---
 
-## Parámetros criptográficos
+## Cryptographic parameters
 
-| Parámetro | Valor |
+| Parameter | Value |
 |-----------|-------|
-| Intercambio de claves | ECDH (P-256) |
-| Cifrado simétrico | AES-256-GCM |
+| Key exchange | ECDH (P-256) |
+| Symmetric encryption | AES-256-GCM |
 | Nonce/IV | 12 bytes (96 bits) |
-| Tag de autenticación | 128 bits |
-| Derivación de clave | HKDF-SHA256 |
-| Forward secrecy | Sí (claves efímeras por sesión) |
+| Authentication tag | 128 bits |
+| Key derivation | HKDF-SHA256 |
+| Forward secrecy | Yes (ephemeral keys per session) |
 
 ---
 
-## Estructura del proyecto
+## Project structure
 
 ```
 ghostchat/
 ├── backend/
 │   ├── main.py              # FastAPI, WebSocket handler, routing
-│   ├── models.py            # SQLite (tabla users)
-│   ├── identity.py          # Generación y gestión de códigos
-│   ├── router.py            # Enrutamiento de mensajes
-│   ├── purge.py             # Purga post-entrega
+│   ├── models.py            # SQLite (users table)
+│   ├── identity.py          # Code generation and management
+│   ├── router.py            # Message routing
+│   ├── purge.py             # Post-delivery purge
 │   ├── rate_limiter.py      # Rate limiting
-│   ├── config.py            # Configuración
+│   ├── config.py            # Configuration
 │   └── requirements.txt     # FastAPI, uvicorn, aiosqlite
 ├── frontend/
-│   ├── index.html           # Página principal
+│   ├── index.html           # Main page
 │   ├── css/
 │   │   └── style.css        # Responsive
 │   ├── js/
-│   │   ├── app.js           # Lógica principal
+│   │   ├── app.js           # Main logic
 │   │   ├── crypto.js        # Web Crypto API
-│   │   ├── websocket.js     # Conexión WebSocket
-│   │   ├── identity.js      # Gestión del código
-│   │   └── ui.js            # DOM, notificaciones
+│   │   ├── websocket.js     # WebSocket connection
+│   │   ├── identity.js      # Code management
+│   │   └── ui.js            # DOM, notifications
 │   ├── manifest.json        # PWA
 │   └── sw.js                # Service Worker
 ├── README.md
@@ -291,40 +291,40 @@ ghostchat/
 
 ## Roadmap
 
-### Fase 1 — Comunicación básica
-Backend WebSocket con FastAPI. Frontend mínimo. Generación de códigos. Mensajes en plano (sin cifrar). Purga básica.
+### Phase 1 — Basic communication
+Backend WebSocket with FastAPI. Minimal frontend. Code generation. Plaintext messages (unencrypted). Basic purge.
 
-### Fase 2 — Protocolo de mensajes
-Estructura JSON (header + payload). Tipos de mensaje. Validación de formato. Manejo de errores.
+### Phase 2 — Message protocol
+JSON structure (header + payload). Message types. Format validation. Error handling.
 
-### Fase 3 — Cifrado E2E
-ECDH con Web Crypto API. Handshake de claves. AES-256-GCM por mensaje. El servidor pasa a ser ciego.
+### Phase 3 — E2E encryption
+ECDH with Web Crypto API. Key handshake. AES-256-GCM per message. The server becomes blind.
 
-### Fase 4 — UI responsive + PWA
-Diseño mobile-first. Indicadores de estado. Notificaciones. Service Worker. Instalable en móvil.
+### Phase 4 — Responsive UI + PWA
+Mobile-first design. Status indicators. Notifications. Service Worker. Installable on mobile.
 
-### Fase 5 — Transferencia de archivos
-Chunking + cifrado. Barra de progreso. Aceptar/rechazar. Límite configurable.
+### Phase 5 — File transfer
+Chunking + encryption. Progress bar. Accept/reject. Configurable size limit.
 
-### Fase 6 — Features avanzados
-Salas multiusuario. Presencia online/offline. Cola temporal offline. Fingerprint de clave pública.
+### Phase 6 — Advanced features
+Multi-user rooms. Online/offline presence. Temporary offline queue. Public key fingerprint.
 
 ---
 
-## Seguridad — Superficie de ataque
+## Security — Attack surface
 
-| Vector | Mitigación |
+| Vector | Mitigation |
 |--------|------------|
-| Servidor comprometido | Solo ve blobs cifrados + códigos sin contexto |
-| MITM en handshake | Verificación de fingerprint fuera de banda (Fase 6) |
-| Replay attack | Nonce único + timestamp por mensaje |
-| Código robado | Refresco inmediato elimina el código viejo |
-| Brute force del código | 62^16 ≈ 4.7 × 10²⁸ combinaciones |
-| Análisis de tráfico | Purga elimina patrones históricos |
-| Acceso físico al dispositivo | Claves solo en memoria del navegador |
+| Compromised server | Only sees encrypted blobs + context-free codes |
+| MITM on handshake | Out-of-band public key fingerprint verification (Phase 6) |
+| Replay attack | Unique nonce + timestamp per message |
+| Stolen code | Immediate refresh eliminates the old code |
+| Code brute force | 62^16 ≈ 4.7 × 10²⁸ combinations |
+| Traffic analysis | Purge eliminates historical patterns |
+| Physical device access | Keys exist only in browser memory |
 
 ---
 
-## Licencia
+## License
 
 MIT

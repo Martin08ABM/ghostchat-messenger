@@ -17,7 +17,8 @@ async def init_db():
   async with aiosqlite.connect(DATABASE_PATH) as db:
     await db.execute(f"""
       CREATE TABLE IF NOT EXISTS users (
-        id CHAR({ID_LENGTH}) PRIMARY KEY
+        id CHAR({ID_LENGTH}) PRIMARY KEY,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     """)
     await db.commit()
@@ -66,6 +67,7 @@ async def id_exists(user_id: str):
 # CONECTION MANAGER
 # Dictrionary to save the active connections
 active_connections = {}
+last_message_time = {}
 
 async def send_to_user(user_id, message):
   websocket = active_connections.get(user_id)
@@ -135,7 +137,14 @@ async def websocket_endpoint(websocket: WebSocket):
         elif msg_type == "text":
           if user_id is None:
             continue
-          
+
+          now = time.time()
+          last = last_message_time.get(user_id, 0)
+          if now - last < 1 / MESSAGES_PER_SECOND:
+            await websocket.send_json({"type": "error", "message": "Rate limit exceeded"})
+            continue
+          last_message_time[user_id] = now
+
           to = data["to"]
           data.pop("to")
             
@@ -168,6 +177,8 @@ async def websocket_endpoint(websocket: WebSocket):
     finally:
         if user_id in active_connections:
             del active_connections[user_id]
+        if user_id in last_message_time:
+            del last_message_time[user_id]
 
 # Set the frontend routes
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"

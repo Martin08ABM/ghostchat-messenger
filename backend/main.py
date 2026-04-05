@@ -1,5 +1,5 @@
 # IMPORTATIONS
-from .config import HOST, PORT, DATABASE_PATH, ID_LENGTH, MESSAGES_PER_SECOND
+from .config import DATABASE_PATH, ID_LENGTH, MESSAGES_PER_SECOND
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 import aiosqlite
 import secrets
@@ -64,6 +64,24 @@ async def id_exists(user_id: str):
       else:
         return True
 
+# MESSAGE VALIDATION
+def validate_message(data):
+  messages_types = ["register", "login", "refresh_id", "text", "ping", "key_exchange", "disconnect"]
+
+  if "type" not in data:
+    return "The message don't have a type"
+  elif data["type"] not in messages_types:
+    return "The message type is not accepted"
+  elif data["type"] == "login" and "id" not in data:
+    return "There was a problem with the message type"
+  elif data["type"] == "text" and ("to" not in data or "payload" not in data):
+    return "There was a problem with the message type"
+  elif data["type"] == "key_exchange" and ("to" not in data or "payload" not in data):
+    return "There was a problem with the message type"
+  
+  else:
+    return None
+
 # CONECTION MANAGER
 # Dictrionary to save the active connections
 active_connections = {}
@@ -99,6 +117,12 @@ async def websocket_endpoint(websocket: WebSocket):
     try:
       while True:
         data = await websocket.receive_json()
+        
+        error = validate_message(data)
+        if error is not None:
+            await websocket.send_json({"type": "error", "message": error})
+            continue
+        
         msg_type = data["type"]
 
         #  Register a new user
@@ -166,6 +190,27 @@ async def websocket_endpoint(websocket: WebSocket):
             
           del to, message, data
             
+        elif msg_type == "key_exchange":
+          if user_id is None:
+            continue
+
+          to = data["to"]
+          message = {
+            "type": "key_exchange",
+            "from": user_id,
+            "payload": data.get("payload", ""),
+          }
+          delivered = await send_to_user(to, message)
+          await websocket.send_json({"type": "delivery_status", "delivered": delivered})
+
+        elif msg_type == "disconnect":
+          if user_id is None:
+            continue
+
+          del active_connections[user_id]
+          user_id = None
+          break
+
         elif msg_type == "ping":
           await websocket.send_json({"type": "pong"})
       

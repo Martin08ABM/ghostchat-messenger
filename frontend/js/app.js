@@ -12,7 +12,7 @@ document.addEventListener("DOMContentLoaded", () => {
       WS.register();
     }
   });
-  WS.connect(`ws://${window.location.hostname}:6543/ws`);
+  WS.connect(`ws://${window.location.host}/ws`);
 
   // Send message
   document.getElementById("message-form").addEventListener("submit", function(event) {
@@ -83,15 +83,27 @@ function handleMessage(data) {
 
 function appendMessage(from, text) {
   const messages = document.getElementById("messages");
-  const div = document.createElement("div");
-  div.textContent = `${from}: ${text}`;
-  messages.appendChild(div);
+
+  if (from == "You") {
+    const div = document.createElement("div");
+    div.className = "msg msg-sent";
+    div.textContent = `${from}: ${text}`;
+    messages.appendChild(div);
+  } else {
+    const div = document.createElement("div");
+    div.className = "msg msg-received";
+    div.textContent = `${from}: ${text}`;
+    messages.appendChild(div);
+  }
+
+  messages.scrollTop = messages.scrollHeight
 }
 
 function appendStatus(text) {
   const messages = document.getElementById("messages");
   const div = document.createElement("div");
   div.textContent = text;
-  div.style.opacity = "0.6";
+  div.className = "msg msg-system"
   messages.appendChild(div);
+  messages.scrollTop = messages.scrollHeight
 }

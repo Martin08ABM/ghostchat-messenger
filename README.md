@@ -195,7 +195,7 @@ graph LR
 | Moment | Information |
 |--------|-------------|
 | During sending | Code A sends something to code B (plaintext `to` header) |
-| During sending | Approximate message size (blob length) |
+| During sending | Padded blob size (multiple of 256 bytes — not the real message size) |
 | Always | Which codes are currently connected |
 
 ### What the server does NOT know (ever)
@@ -238,6 +238,7 @@ The backend **does not touch**: `payload`, `nonce`.
 |------|-------------|:-----------------:|
 | `key_exchange` | ECDH public key for handshake | ❌ |
 | `text` | Text message | ✅ |
+| `typing` | Typing presence signal | ❌ |
 | `file_meta` | File metadata (name, size, MIME) | ✅ |
 | `file_chunk` | Binary file chunk | ✅ |
 | `ping` | Keep-alive | ❌ |
@@ -321,6 +322,8 @@ Multi-user rooms. Online/offline presence. Temporary offline queue. Public key f
 | Stolen code | Immediate refresh eliminates the old code |
 | Code brute force | 62^16 ≈ 4.7 × 10²⁸ combinations |
 | Traffic analysis | Purge eliminates historical patterns |
+| Message size analysis | Plaintext padded to multiples of 256 bytes before encryption |
+| Connection loss | Automatic WebSocket reconnection with exponential backoff |
 | Physical device access | Keys exist only in browser memory |
 
 ---

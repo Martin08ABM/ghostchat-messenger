@@ -66,7 +66,7 @@ async def id_exists(user_id: str):
 
 # MESSAGE VALIDATION
 def validate_message(data):
-  messages_types = ["register", "login", "refresh_id", "text", "ping", "key_exchange", "disconnect"]
+  messages_types = ["register", "login", "refresh_id", "text", "ping", "key_exchange", "disconnect", "typing"]
 
   if "type" not in data:
     return "The message don't have a type"
@@ -74,18 +74,20 @@ def validate_message(data):
     return "The message type is not accepted"
   elif data["type"] == "login" and "id" not in data:
     return "There was a problem with the message type"
-  elif data["type"] == "text" and ("to" not in data or "payload" not in data):
+  elif data["type"] == "text" and ("to" not in data or "payload" not in data or "nonce" not in data):
     return "There was a problem with the message type"
   elif data["type"] == "key_exchange" and ("to" not in data or "payload" not in data):
     return "There was a problem with the message type"
-  
+  elif data["type"] == "typing" and "to" not in data:
+    return "There was a problem with the message type"
+
   else:
     return None
 
 # CONECTION MANAGER
 # Dictrionary to save the active connections
-active_connections = {}
-last_message_time = {}
+active_connections: dict[str, WebSocket] = {}
+last_message_time: dict[str, float] = {}
 
 async def send_to_user(user_id, message):
   websocket = active_connections.get(user_id)
@@ -173,10 +175,11 @@ async def websocket_endpoint(websocket: WebSocket):
           data.pop("to")
             
           message = {
-            "type": "sended",
-            "from": user_id,
-            "payload": data.get("payload", ""),
-            "timestamp": time.time(),
+              "type": "sended",
+              "from": user_id,
+              "payload": data.get("payload", ""),
+              "nonce": data.get("nonce", ""),
+              "timestamp": time.time(),
           }
           try:
             sended = await send_to_user(to, message)
@@ -202,6 +205,11 @@ async def websocket_endpoint(websocket: WebSocket):
           }
           delivered = await send_to_user(to, message)
           await websocket.send_json({"type": "delivery_status", "delivered": delivered})
+
+        elif msg_type == "typing":
+          if user_id is None:
+            continue
+          await send_to_user(data["to"], {"type": "typing", "from": user_id})
 
         elif msg_type == "disconnect":
           if user_id is None:

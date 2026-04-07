@@ -8,18 +8,32 @@
 </head>
 <body>
 
-  <!-- Header here we can see our identity -->
+  <!-- Header -->
   <header id="top-bar">
     <div id="identity">
       <span id="identity-label">Your code:</span>
       <span id="my-id">-</span>
       <button id="btn-copy">Copy</button>
+      <button id="btn-qr">QR</button>
       <button id="btn-refresh">Refresh</button>
     </div>
-    <span id="status">Disconnected</span>
+    <div id="header-right">
+      <button id="btn-theme">☀/☾</button>
+      <span id="status">Disconnected</span>
+    </div>
   </header>
 
-  <!-- Conection zone with peer -->
+  <!-- QR modal -->
+  <div id="qr-modal" hidden>
+    <div id="qr-backdrop"></div>
+    <div id="qr-box">
+      <p id="qr-label">Scan to share your code</p>
+      <div id="qr-canvas"></div>
+      <button id="qr-close">Close</button>
+    </div>
+  </div>
+
+  <!-- Connection zone with peer -->
   <div id="peer-section">
     <input type="text" id="peer-input" placeholder="Contact code" autocomplete="off">
     <button id="btn-connect-peer">Connect</button>
@@ -28,13 +42,19 @@
   <!-- Messages area -->
   <main id="messages"></main>
 
+  <!-- Typing indicator -->
+  <div id="typing-indicator"></div>
+
   <!-- Send messages -->
   <form id="message-form">
-    <input type="text" id="message-input" placeholder="Write a messaje..." autocomplete="off">
+    <input type="text" id="message-input" placeholder="Write a message..." autocomplete="off">
     <button type="submit" id="btn-send">Send</button>
   </form>
 
+  <!-- QR library (client-side only, no data sent to external servers) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <script src="/js/websocket.js"></script>
+  <script src="/js/crypto.js"></script>
   <script src="/js/app.js"></script>
 </body>
 </html>

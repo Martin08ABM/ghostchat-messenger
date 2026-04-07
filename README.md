@@ -2,6 +2,9 @@
 
 **E2E encrypted zero-knowledge chat.** The server is a blind courier: it routes messages it cannot read and purges them after delivery. No name, no email, no phone number. Just a random code.
 
+> This README was written by the project author and improved with the help of [Claude](https://claude.ai).
+> Claude helped me rewrite this README and build this project by answering my questions and guiding me.
+
 ---
 
 ## Concept
@@ -262,30 +265,22 @@ The backend **does not touch**: `payload`, `nonce`.
 ## Project structure
 
 ```
-ghostchat/
+ghostchat-messenger/
 ├── backend/
-│   ├── main.py              # FastAPI, WebSocket handler, routing
-│   ├── models.py            # SQLite (users table)
-│   ├── identity.py          # Code generation and management
-│   ├── router.py            # Message routing
-│   ├── purge.py             # Post-delivery purge
-│   ├── rate_limiter.py      # Rate limiting
-│   ├── config.py            # Configuration
+│   ├── main.py              # FastAPI, WebSocket handler, routing, rate limiting, purge
+│   ├── config.py            # Configuration (host, port, DB path, rate limit)
+│   ├── __init__.py
 │   └── requirements.txt     # FastAPI, uvicorn, aiosqlite
 ├── frontend/
 │   ├── index.html           # Main page
 │   ├── css/
-│   │   └── style.css        # Responsive
-│   ├── js/
-│   │   ├── app.js           # Main logic
-│   │   ├── crypto.js        # Web Crypto API
-│   │   ├── websocket.js     # WebSocket connection
-│   │   ├── identity.js      # Code management
-│   │   └── ui.js            # DOM, notifications
-│   ├── manifest.json        # PWA
-│   └── sw.js                # Service Worker
+│   │   └── styles.css       # Responsive, dark/light mode
+│   └── js/
+│       ├── app.js           # Main logic, contacts, UI handlers
+│       ├── crypto.js        # Web Crypto API (ECDH, HKDF, AES-GCM, padding)
+│       └── websocket.js     # WebSocket connection, reconnection with backoff
 ├── README.md
-└── LICENSE
+└── .gitignore
 ```
 
 ---

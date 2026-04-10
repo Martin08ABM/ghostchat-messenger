@@ -4,7 +4,7 @@ providers = ["python"]
 nixPkgs = ["python313"]
 
 [phases.install]
-cmds = ["pip install -r backend/requirements.txt"]
+cmds = ["python3 -m pip install -r backend/requirements.txt"]
 
 [start]
 cmd = "uvicorn backend.main:app --host 0.0.0.0 --port 6543"

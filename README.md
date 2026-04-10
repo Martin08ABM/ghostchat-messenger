@@ -326,3 +326,5 @@ Multi-user rooms. Online/offline presence. Temporary offline queue. Public key f
 ## License
 
 MIT
+
+uvicorn backend.main:app --host 0.0.0.0 --port 6543

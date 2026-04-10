@@ -444,3 +444,64 @@ button:hover {
 #qr-close:hover {
   background: #444;
 }
+
+/* ── Chat header (mobile only) ───────────────────────────────── */
+#chat-header {
+  display: none;
+}
+
+/* ── Responsive ──────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  #identity-label { display: none; }
+
+  #my-id {
+    max-width: 110px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  #sidebar {
+    width: 100%;
+  }
+
+  #chat-panel {
+    display: none;
+    width: 100%;
+  }
+
+  #app.chat-active #sidebar {
+    display: none;
+  }
+
+  #app.chat-active #chat-panel {
+    display: flex;
+  }
+
+  #chat-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  #btn-back {
+    padding: 6px 10px;
+    font-size: 16px;
+  }
+
+  #chat-contact-name {
+    font-size: 14px;
+    font-family: monospace;
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .msg { max-width: 85%; }
+
+  #add-contact-box { width: calc(100vw - 32px); }
+}

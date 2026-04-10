@@ -240,5 +240,14 @@ FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 async def serve_index():
     return FileResponse(FRONTEND_DIR/"index.html")
 
+@app.get("/manifest.json")
+async def serve_manifest():
+    return FileResponse(FRONTEND_DIR/"manifest.json", media_type="application/manifest+json")
+
+@app.get("/sw.js")
+async def serve_sw():
+    return FileResponse(FRONTEND_DIR/"sw.js", media_type="application/javascript")
+
 app.mount("/css", StaticFiles(directory=FRONTEND_DIR/"css"), name="css")
 app.mount("/js", StaticFiles(directory=FRONTEND_DIR/"js"), name="js")
+app.mount("/icons", StaticFiles(directory=FRONTEND_DIR/"icons"), name="icons")

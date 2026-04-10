@@ -126,6 +126,8 @@ async function openConversation(code) {
   document.getElementById("chat-placeholder").hidden = true;
   document.getElementById("messages").hidden = false;
   document.getElementById("message-form").hidden = false;
+  document.getElementById("app").classList.add("chat-active");
+  document.getElementById("chat-contact-name").textContent = contact.nickname;
   clearTyping();
 
   // Render stored messages
@@ -147,6 +149,7 @@ function showPlaceholder() {
   document.getElementById("chat-placeholder").hidden = false;
   document.getElementById("messages").hidden = true;
   document.getElementById("message-form").hidden = true;
+  document.getElementById("app").classList.remove("chat-active");
   clearTyping();
 }
 
@@ -354,6 +357,13 @@ document.addEventListener("DOMContentLoaded", () => {
   // Allow submitting add-contact with Enter
   document.getElementById("add-contact-nickname").addEventListener("keydown", (e) => {
     if (e.key === "Enter") document.getElementById("add-contact-confirm").click();
+  });
+
+  // Back button (mobile)
+  document.getElementById("btn-back").addEventListener("click", () => {
+    activeContact = null;
+    showPlaceholder();
+    renderContactList();
   });
 });
 

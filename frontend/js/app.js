@@ -3,6 +3,14 @@ let id = null;
 let connected = false;
 let typingHideTimeout = null;
 
+// ── File transfer state ───────────────────────────────────────────────────────
+const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25 MB
+const CHUNK_SIZE    = 32 * 1024;        // 32 KB per chunk
+// transferId → { name, size, mime, from, chunks: [], received, total }
+const incomingTransfers = new Map();
+// transferId → { file, to }
+const outgoingTransfers = new Map();
+
 // contacts: code → { nickname, keyPair, sharedKey, unread, saved }
 // saved=true  → persisted in localStorage
 // saved=false → temporary (unknown contact that initiated contact with us)
@@ -114,7 +122,6 @@ function renderContactList() {
   }
 }
 
-
 // ── Conversation ──────────────────────────────────────────────────────────────
 async function openConversation(code) {
   activeContact = code;
@@ -129,6 +136,14 @@ async function openConversation(code) {
   document.getElementById("app").classList.add("chat-active");
   document.getElementById("chat-contact-name").textContent = contact.nickname;
   clearTyping();
+
+  // Reset file preview and progress
+  document.getElementById("file-send").value = "";
+  document.getElementById("file-preview-img").hidden = true;
+  document.getElementById("file-preview-img").src = "";
+  document.getElementById("file-preview-name").textContent = "";
+  document.getElementById("file-preview").hidden = true;
+  hideProgress();
 
   // Render stored messages
   const msgEl = document.getElementById("messages");
@@ -224,6 +239,59 @@ async function handleMessage(data) {
       break;
     }
 
+    case "file_meta": {
+      const contact = contacts.get(data.from);
+      if (!contact?.sharedKey) break;
+      const metaStr = await GhostCrypto.decrypt(contact.sharedKey, data.nonce, data.payload);
+      const meta = JSON.parse(metaStr);
+      incomingTransfers.set(data.transferId, {
+        name: meta.name, size: meta.size, mime: meta.mime,
+        from: data.from, chunks: [], received: 0, total: null,
+      });
+      const senderName = contact.nickname ?? data.from.slice(0, 8) + "…";
+      document.getElementById("file-incoming-sender").textContent = `From: ${senderName}`;
+      document.getElementById("file-incoming-info").textContent =
+        `${meta.name}  (${formatFileSize(meta.size)})`;
+      const modal = document.getElementById("file-incoming-modal");
+      modal.dataset.transferId = data.transferId;
+      modal.dataset.from = data.from;
+      modal.hidden = false;
+      break;
+    }
+
+    case "file_chunk": {
+      const transfer = incomingTransfers.get(data.transferId);
+      if (!transfer) break;
+      const contact = contacts.get(data.from);
+      if (!contact?.sharedKey) break;
+      if (transfer.total === null) transfer.total = data.total;
+      const chunkBytes = await GhostCrypto.decryptBytes(contact.sharedKey, data.nonce, data.payload);
+      transfer.chunks[data.index] = chunkBytes;
+      transfer.received++;
+      showProgress(`Receiving ${transfer.name}`, (transfer.received / transfer.total) * 100);
+      if (transfer.received === transfer.total) {
+        triggerDownload(transfer.chunks, transfer.name, transfer.mime);
+        appendStatus(`File "${transfer.name}" received`);
+        hideProgress();
+        incomingTransfers.delete(data.transferId);
+      }
+      break;
+    }
+
+    case "file_accept":
+      startChunkedSend(data.transferId);
+      break;
+
+    case "file_reject": {
+      const transfer = outgoingTransfers.get(data.transferId);
+      if (transfer) {
+        appendStatus("File transfer rejected");
+        outgoingTransfers.delete(data.transferId);
+        hideProgress();
+      }
+      break;
+    }
+
     case "typing":
       if (data.from === activeContact) showTyping(data.from);
       break;
@@ -269,12 +337,35 @@ document.addEventListener("DOMContentLoaded", () => {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   WS.connect(`${protocol}//${window.location.host}/ws`);
 
-  // Send message
+  // Send message or file
   document.getElementById("message-form").addEventListener("submit", async (e) => {
     e.preventDefault();
     if (!activeContact) return;
     const contact = contacts.get(activeContact);
     if (!contact?.sharedKey) return;
+
+    // File takes priority when selected
+    const fileInput = document.getElementById("file-send");
+    if (fileInput.files[0]) {
+      const file = fileInput.files[0];
+      if (file.size > MAX_FILE_SIZE) {
+        appendStatus(`File too large (max ${formatFileSize(MAX_FILE_SIZE)})`);
+        return;
+      }
+      const transferId = generateTransferId();
+      outgoingTransfers.set(transferId, { file, to: activeContact });
+      const meta = JSON.stringify({ name: file.name, size: file.size, mime: file.type });
+      const enc = await GhostCrypto.encrypt(contact.sharedKey, meta);
+      WS.send({ type: "file_meta", to: activeContact, transferId, payload: enc.ciphertext, nonce: enc.nonce });
+      showProgress("Waiting for acceptance…", 0);
+      // Clear file preview
+      fileInput.value = "";
+      document.getElementById("file-preview-img").hidden = true;
+      document.getElementById("file-preview-img").src = "";
+      document.getElementById("file-preview-name").textContent = "";
+      document.getElementById("file-preview").hidden = true;
+      return;
+    }
 
     const input = document.getElementById("message-input");
     const text = input.value.trim();
@@ -285,6 +376,27 @@ document.addEventListener("DOMContentLoaded", () => {
     messages.get(activeContact).push({ from: "You", text, timestamp: Date.now() });
     appendMessageElement("You", text);
     input.value = "";
+  });
+
+  // File incoming: accept
+  document.getElementById("file-incoming-accept").addEventListener("click", () => {
+    const modal = document.getElementById("file-incoming-modal");
+    const transferId = modal.dataset.transferId;
+    const from = modal.dataset.from;
+    modal.hidden = true;
+    WS.send({ type: "file_accept", to: from, transferId });
+    const transfer = incomingTransfers.get(transferId);
+    if (transfer) showProgress(`Receiving ${transfer.name}`, 0);
+  });
+
+  // File incoming: reject
+  document.getElementById("file-incoming-reject").addEventListener("click", () => {
+    const modal = document.getElementById("file-incoming-modal");
+    const transferId = modal.dataset.transferId;
+    const from = modal.dataset.from;
+    modal.hidden = true;
+    WS.send({ type: "file_reject", to: from, transferId });
+    incomingTransfers.delete(transferId);
   });
 
   // Typing indicator (debounced)
@@ -360,6 +472,41 @@ document.addEventListener("DOMContentLoaded", () => {
     if (e.key === "Enter") document.getElementById("add-contact-confirm").click();
   });
 
+  // File preview
+  const fileInput = document.getElementById("file-send");
+  const filePreview = document.getElementById("file-preview");
+  const filePreviewImg = document.getElementById("file-preview-img");
+  const filePreviewName = document.getElementById("file-preview-name");
+  const filePreviewClear = document.getElementById("file-preview-clear");
+
+  fileInput.addEventListener("change", () => {
+    const file = fileInput.files[0];
+    if (!file) return;
+
+    filePreviewName.textContent = `${file.name} (${formatFileSize(file.size)})`;
+
+    if (file.type.startsWith("image/")) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        filePreviewImg.src = e.target.result;
+        filePreviewImg.hidden = false;
+      };
+      reader.readAsDataURL(file);
+    } else {
+      filePreviewImg.hidden = true;
+    }
+
+    filePreview.hidden = false;
+  });
+
+  filePreviewClear.addEventListener("click", () => {
+    fileInput.value = "";
+    filePreviewImg.hidden = true;
+    filePreviewImg.src = "";
+    filePreviewName.textContent = "";
+    filePreview.hidden = true;
+  });
+
   // Back button (mobile)
   document.getElementById("btn-back").addEventListener("click", () => {
     activeContact = null;
@@ -398,4 +545,64 @@ function appendStatus(text) {
   div.className = "msg msg-system";
   msgs.appendChild(div);
   msgs.scrollTop = msgs.scrollHeight;
+}
+
+
+// ── File transfer helpers ─────────────────────────────────────────────────────
+function generateTransferId() {
+  return Array.from(crypto.getRandomValues(new Uint8Array(8)))
+    .map(b => b.toString(16).padStart(2, "0")).join("");
+}
+
+function formatFileSize(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function showProgress(label, pct) {
+  document.getElementById("file-progress").hidden = false;
+  document.getElementById("file-progress-label").textContent = label;
+  document.getElementById("file-progress-fill").style.width = `${pct}%`;
+  document.getElementById("file-progress-pct").textContent = `${Math.round(pct)}%`;
+}
+
+function hideProgress() {
+  document.getElementById("file-progress").hidden = true;
+  document.getElementById("file-progress-fill").style.width = "0%";
+}
+
+async function startChunkedSend(transferId) {
+  const transfer = outgoingTransfers.get(transferId);
+  if (!transfer) return;
+  const { file, to } = transfer;
+  const contact = contacts.get(to);
+  if (!contact?.sharedKey) return;
+
+  const total = Math.ceil(file.size / CHUNK_SIZE);
+  const buffer = await file.arrayBuffer();
+
+  for (let i = 0; i < total; i++) {
+    const start = i * CHUNK_SIZE;
+    const slice = new Uint8Array(buffer, start, Math.min(CHUNK_SIZE, file.size - start));
+    const enc = await GhostCrypto.encryptBytes(contact.sharedKey, slice);
+    WS.send({ type: "file_chunk", to, transferId, index: i, total, payload: enc.ciphertext, nonce: enc.nonce });
+    showProgress(`Sending ${file.name}`, ((i + 1) / total) * 100);
+    // Yield to keep UI responsive between chunks
+    await new Promise(r => setTimeout(r, 0));
+  }
+
+  appendStatus(`File "${file.name}" sent`);
+  hideProgress();
+  outgoingTransfers.delete(transferId);
+}
+
+function triggerDownload(chunks, name, mime) {
+  const blob = new Blob(chunks, { type: mime || "application/octet-stream" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
 }

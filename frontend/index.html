@@ -49,7 +49,19 @@
       <div id="chat-placeholder">Select a contact to start chatting</div>
       <main id="messages" hidden></main>
       <div id="typing-indicator"></div>
+      <div id="file-progress" hidden>
+        <span id="file-progress-label"></span>
+        <div id="file-progress-track"><div id="file-progress-fill"></div></div>
+        <span id="file-progress-pct">0%</span>
+      </div>
+      <div id="file-preview" hidden>
+        <img id="file-preview-img" hidden alt="preview">
+        <span id="file-preview-name"></span>
+        <button type="button" id="file-preview-clear" title="Remove file">×</button>
+      </div>
       <form id="message-form" hidden>
+        <input type="file" name="file-send" id="file-send" style="display:none">
+        <label for="file-send" id="file-send-label" title="Attach file">&#43</label>
         <input type="text" id="message-input" placeholder="Write a message..." autocomplete="off">
         <button type="submit" id="btn-send">Send</button>
       </form>
@@ -78,6 +90,21 @@
       <p id="qr-label">Scan to share your code</p>
       <div id="qr-canvas"></div>
       <button id="qr-close">Close</button>
+    </div>
+  </div>
+
+  <!-- File incoming modal -->
+  <div id="file-incoming-modal" hidden>
+    <div id="file-incoming-backdrop"></div>
+    <div id="file-incoming-box">
+      <h3>Incoming file</h3>
+      <p id="file-incoming-sender"></p>
+      <p id="file-incoming-info"></p>
+      <div id="file-incoming-actions">
+        <button id="file-incoming-reject">Reject</button>
+        <button id="file-incoming-accept">Accept</button>
+        <p>Remember to save the received files, as you can't view them multiple times</p>
+      </div>
     </div>
   </div>
 

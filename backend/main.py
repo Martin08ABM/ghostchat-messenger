@@ -66,7 +66,11 @@ async def id_exists(user_id: str):
 
 # MESSAGE VALIDATION
 def validate_message(data):
-  messages_types = ["register", "login", "refresh_id", "text", "ping", "key_exchange", "disconnect", "typing"]
+  messages_types = [
+    "register", "login", "refresh_id", "text", "ping",
+    "key_exchange", "disconnect", "typing",
+    "file_meta", "file_chunk", "file_accept", "file_reject",
+  ]
 
   if "type" not in data:
     return "The message don't have a type"
@@ -80,7 +84,12 @@ def validate_message(data):
     return "There was a problem with the message type"
   elif data["type"] == "typing" and "to" not in data:
     return "There was a problem with the message type"
-
+  elif data["type"] == "file_meta" and ("to" not in data or "transferId" not in data or "payload" not in data or "nonce" not in data):
+    return "There was a problem with the message type"
+  elif data["type"] == "file_chunk" and ("to" not in data or "transferId" not in data or "index" not in data or "total" not in data or "payload" not in data or "nonce" not in data):
+    return "There was a problem with the message type"
+  elif data["type"] in ("file_accept", "file_reject") and ("to" not in data or "transferId" not in data):
+    return "There was a problem with the message type"
   else:
     return None
 
@@ -205,6 +214,42 @@ async def websocket_endpoint(websocket: WebSocket):
           }
           delivered = await send_to_user(to, message)
           await websocket.send_json({"type": "delivery_status", "delivered": delivered})
+
+        elif msg_type == "file_meta":
+          if user_id is None:
+            continue
+          to = data["to"]
+          delivered = await send_to_user(to, {
+            "type": "file_meta",
+            "from": user_id,
+            "transferId": data["transferId"],
+            "payload": data["payload"],
+            "nonce": data["nonce"],
+          })
+          await websocket.send_json({"type": "delivery_status", "delivered": delivered})
+
+        elif msg_type == "file_chunk":
+          if user_id is None:
+            continue
+          to = data["to"]
+          await send_to_user(to, {
+            "type": "file_chunk",
+            "from": user_id,
+            "transferId": data["transferId"],
+            "index": data["index"],
+            "total": data["total"],
+            "payload": data["payload"],
+            "nonce": data["nonce"],
+          })
+
+        elif msg_type in ("file_accept", "file_reject"):
+          if user_id is None:
+            continue
+          await send_to_user(data["to"], {
+            "type": msg_type,
+            "from": user_id,
+            "transferId": data["transferId"],
+          })
 
         elif msg_type == "typing":
           if user_id is None:

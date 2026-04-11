@@ -1,3 +1,6 @@
+/* Ensure [hidden] always wins over display rules defined in author styles */
+[hidden] { display: none !important; }
+
 :root {
   --bg: #0a0a0a;
   --surface: #111111;
@@ -328,6 +331,185 @@ button:hover {
   background: #9a3412;
   transition: background .2s ease-in;
 }
+
+/* ── File sender button ───────────────────────────────────────────── */
+#file-send {
+  display: none;
+}
+
+#file-send-label {
+  background: #062901;
+  border: 1px solid #014b01;
+  color: #e0e0e0;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 22px;
+  user-select: none;
+}
+
+#file-send-label:hover {
+  background: #0a3d01;
+}
+
+#file-preview {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  background: #0a1f0a;
+  border-top: 1px solid #014b01;
+}
+
+#file-preview-img {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 1px solid #014b01;
+}
+
+#file-preview-name {
+  flex: 1;
+  font-size: 13px;
+  color: #b0c8b0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#file-preview-clear {
+  background: none;
+  border: none;
+  color: #888;
+  font-size: 20px;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0 4px;
+}
+
+#file-preview-clear:hover {
+  color: #e05050;
+}
+
+
+/* ── File progress bar ───────────────────────────────────────── */
+#file-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px;
+  background: #0a1f0a;
+  border-top: 1px solid #014b01;
+}
+
+#file-progress-label {
+  font-size: 12px;
+  color: #b0c8b0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
+}
+
+#file-progress-track {
+  flex: 1;
+  height: 6px;
+  background: #1a3a1a;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+#file-progress-fill {
+  height: 100%;
+  width: 0%;
+  background: #2e7d32;
+  border-radius: 3px;
+  transition: width 0.15s ease;
+}
+
+#file-progress-pct {
+  font-size: 12px;
+  color: #7cb87c;
+  min-width: 36px;
+  text-align: right;
+}
+
+/* ── File incoming modal ─────────────────────────────────────── */
+#file-incoming-modal {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+}
+
+#file-incoming-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+}
+
+#file-incoming-box {
+  position: relative;
+  background: #0d1f0d;
+  border: 1px solid #014b01;
+  border-radius: 10px;
+  padding: 24px;
+  width: 300px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+#file-incoming-box h3 {
+  margin: 0;
+  font-size: 16px;
+  color: #c8e6c9;
+}
+
+#file-incoming-sender {
+  margin: 0;
+  font-size: 13px;
+  color: #7cb87c;
+}
+
+#file-incoming-info {
+  margin: 0;
+  font-size: 14px;
+  color: #e0e0e0;
+  word-break: break-all;
+}
+
+#file-incoming-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+#file-incoming-reject {
+  background: #1a0000;
+  border: 1px solid #7b0000;
+  color: #e07070;
+  padding: 7px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+#file-incoming-reject:hover { background: #2a0000; }
+
+#file-incoming-accept {
+  background: #062901;
+  border: 1px solid #014b01;
+  color: #c8e6c9;
+  padding: 7px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+#file-incoming-accept:hover { background: #0a3d01; }
 
 /* ── Add contact modal ───────────────────────────────────────── */
 #add-contact-modal {

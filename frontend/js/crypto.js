@@ -89,4 +89,29 @@ async function decrypt(sharedKey, nonce, ciphertext) {
   return _unpad(new Uint8Array(decrypted));
 }
 
-window.GhostCrypto = { generateKeyPair, exportPublicKey, importPublicKey, deriveSharedKey, encrypt, decrypt }
+// Safe base64 encoder for large Uint8Arrays (avoids spread stack overflow)
+function _bytesToBase64(bytes) {
+  let str = '';
+  for (let i = 0; i < bytes.length; i++) str += String.fromCharCode(bytes[i]);
+  return btoa(str);
+}
+
+// Encrypt raw bytes (for file chunks) — no text padding
+async function encryptBytes(sharedKey, bytes) {
+  const nonce = window.crypto.getRandomValues(new Uint8Array(12));
+  const ciphertext = await window.crypto.subtle.encrypt({ name: "AES-GCM", iv: nonce }, sharedKey, bytes);
+  return {
+    nonce: _bytesToBase64(nonce),
+    ciphertext: _bytesToBase64(new Uint8Array(ciphertext))
+  };
+}
+
+// Decrypt raw bytes (for file chunks)
+async function decryptBytes(sharedKey, nonce, ciphertext) {
+  const nonceBytes = Uint8Array.from(atob(nonce), c => c.charCodeAt(0));
+  const ciphertextBytes = Uint8Array.from(atob(ciphertext), c => c.charCodeAt(0));
+  const decrypted = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: nonceBytes }, sharedKey, ciphertextBytes);
+  return new Uint8Array(decrypted);
+}
+
+window.GhostCrypto = { generateKeyPair, exportPublicKey, importPublicKey, deriveSharedKey, encrypt, decrypt, encryptBytes, decryptBytes }

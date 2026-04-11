@@ -266,7 +266,8 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  WS.connect(`ws://${window.location.host}/ws`);
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  WS.connect(`${protocol}//${window.location.host}/ws`);
 
   // Send message
   document.getElementById("message-form").addEventListener("submit", async (e) => {

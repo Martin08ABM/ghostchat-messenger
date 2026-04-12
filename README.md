@@ -325,6 +325,7 @@ Multi-user rooms. Online/offline presence. Temporary offline queue. Public key f
 
 ## License
 
-MIT
+This project is licensed under the GNU General Public License v3.0.  
+See the [LICENSE](LICENSE) file for details.
 
 uvicorn backend.main:app --host 0.0.0.0 --port 6543

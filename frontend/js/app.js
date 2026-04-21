@@ -1,19 +1,105 @@
+// ── Security & Validation Helpers ─────────────────────────────────────────────
+
+/**
+ * Sanitiza el input para prevenir XSS
+ * @param {string} str - String a sanitizar
+ * @returns {string} String sanitizado
+ */
+function sanitizeInput(str) {
+  if (typeof str !== 'string') return '';
+  
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+/**
+ * Valida un código de usuario (ID)
+ * @param {string} code - Código a validar
+ * @returns {boolean} true si es válido
+ */
+function isValidUserCode(code) {
+  if (!code || typeof code !== 'string') return false;
+  return /^[a-zA-Z0-9]{8,32}$/.test(code);
+}
+
+/**
+ * Valida un nickname
+ * @param {string} nickname - Nickname a validar
+ * @returns {boolean} true si es válido
+ */
+function isValidNickname(nickname) {
+  if (!nickname || typeof nickname !== 'string') return false;
+  return nickname.length <= 50 && nickname.trim().length > 0;
+}
+
+/**
+ * Valida y limita el tamaño de mensaje
+ * @param {string} text - Texto a validar
+ * @returns {object} {valid: boolean, error?: string}
+ */
+function validateMessageText(text) {
+  if (!text || typeof text !== 'string') {
+    return { valid: false, error: 'Message cannot be empty' };
+  }
+  
+  const MAX_MESSAGE_LENGTH = 10000; // 10KB max
+  
+  if (text.length > MAX_MESSAGE_LENGTH) {
+    return { valid: false, error: `Message too long (max ${MAX_MESSAGE_LENGTH} chars)` };
+  }
+  
+  // Verificar contenido peligroso (solo advertencia)
+  const dangerousPatterns = [
+    /<script/i,
+    /javascript:/i,
+    /on\w+\s*=/i  // onerror, onclick, etc.
+  ];
+  
+  const hasDangerousContent = dangerousPatterns.some(pattern => pattern.test(text));
+  if (hasDangerousContent) {
+    console.warn('[Security] Potentially dangerous content detected in message');
+  }
+  
+  return { valid: true };
+}
+
+/**
+ * Escapa atributos HTML para usar en templates
+ * @param {string} str - String a escapar
+ * @returns {string} String escapado
+ */
+function escapeHtmlAttribute(str) {
+  return str.replace(/["&<>]/g, (char) => {
+    switch (char) {
+      case '"': return '&quot;';
+      case '&': return '&amp;';
+      case '<': return '&lt;';
+      case '>': return '&gt;';
+      default: return char;
+    }
+  });
+}
+
 // ── State ────────────────────────────────────────────────────────────────────
 let id = null;
 let connected = false;
 let typingHideTimeout = null;
 
 // ── File transfer state ───────────────────────────────────────────────────────
-const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25 MB
-const CHUNK_SIZE    = 32 * 1024;        // 32 KB per chunk
-// transferId → { name, size, mime, from, chunks: [], received, total }
+const MAX_FILE_SIZE       = 25 * 1024 * 1024; // 25 MB
+const CHUNK_SIZE          = 32 * 1024;        // 32 KB per chunk
+const TRANSFER_TIMEOUT_MS = 90_000;           // 90 s — stalled transfer cleanup
+// transferId → { name, size, mime, from, chunks: [], received, total, timeoutId }
 const incomingTransfers = new Map();
-// transferId → { file, to }
+// transferId → { file, to, timeoutId }
 const outgoingTransfers = new Map();
+// Queue of pending incoming file offers { transferId, from, meta } not yet shown in modal
+const incomingFileQueue = [];
 
 // contacts: code → { nickname, keyPair, sharedKey, unread, saved }
 // saved=true  → persisted in localStorage
-// saved=false → temporary (unknown contact that initiated contact with us)
+// saved=false → temporary contact (initiated contact with us, not yet saved)
 const contacts = new Map();
 
 // messages: code → [{ from, text, timestamp }]  (ephemeral, lost on close)
@@ -24,30 +110,72 @@ let activeContact = null;
 
 // ── Contacts persistence ──────────────────────────────────────────────────────
 function loadContacts() {
-  const saved = JSON.parse(localStorage.getItem("ghostchat_contacts") || "[]");
-  for (const { code, nickname } of saved) {
-    contacts.set(code, { nickname, keyPair: null, sharedKey: null, unread: 0, saved: true });
-    messages.set(code, []);
+  try {
+    const saved = JSON.parse(localStorage.getItem("ghostchat_contacts") || "[]");
+    for (const { code, nickname } of saved) {
+      if (isValidUserCode(code) && isValidNickname(nickname)) {
+        contacts.set(code, { 
+          nickname: sanitizeInput(nickname), 
+          keyPair: null, 
+          sharedKey: null, 
+          unread: 0, 
+          saved: true 
+        });
+        messages.set(code, []);
+      }
+    }
+    renderContactList();
+  } catch (error) {
+    console.error('[Security] Error loading contacts:', error);
+    localStorage.removeItem("ghostchat_contacts");
   }
-  renderContactList();
 }
 
 function saveContacts() {
-  const arr = [];
-  for (const [code, c] of contacts) {
-    if (c.saved) arr.push({ code, nickname: c.nickname });
+  try {
+    const arr = [];
+    for (const [code, c] of contacts) {
+      if (c.saved && isValidUserCode(code) && isValidNickname(c.nickname)) {
+        arr.push({ 
+          code, 
+          nickname: c.nickname.substring(0, 50) 
+        });
+      }
+    }
+    localStorage.setItem("ghostchat_contacts", JSON.stringify(arr));
+  } catch (error) {
+    console.error('[Security] Error saving contacts:', error);
   }
-  localStorage.setItem("ghostchat_contacts", JSON.stringify(arr));
 }
 
 function addContact(code, nickname) {
+  // Validar inputs
+  if (!isValidUserCode(code)) {
+    console.error('[Security] Invalid contact code format:', code);
+    appendStatus("Error: Invalid contact code format");
+    return;
+  }
+  
+  if (!isValidNickname(nickname)) {
+    console.error('[Security] Invalid nickname:', nickname);
+    appendStatus("Error: Invalid nickname");
+    return;
+  }
+  
+  const sanitizedNickname = sanitizeInput(nickname);
+  
   if (contacts.has(code)) {
-    // If it existed as temporary, just mark it as saved
     const c = contacts.get(code);
-    c.nickname = nickname || c.nickname;
+    c.nickname = sanitizedNickname || c.nickname;
     c.saved = true;
   } else {
-    contacts.set(code, { nickname: nickname || code.slice(0, 8) + "…", keyPair: null, sharedKey: null, unread: 0, saved: true });
+    contacts.set(code, { 
+      nickname: sanitizedNickname, 
+      keyPair: null, 
+      sharedKey: null, 
+      unread: 0, 
+      saved: true 
+    });
     messages.set(code, []);
   }
   saveContacts();
@@ -55,6 +183,11 @@ function addContact(code, nickname) {
 }
 
 function removeContact(code) {
+  if (!isValidUserCode(code)) {
+    console.error('[Security] Invalid code when removing contact:', code);
+    return;
+  }
+  
   contacts.delete(code);
   messages.delete(code);
   if (activeContact === code) {
@@ -72,13 +205,19 @@ function renderContactList() {
   list.innerHTML = "";
 
   for (const [code, c] of contacts) {
+    // Validar código antes de renderizar
+    if (!isValidUserCode(code)) {
+      console.warn('[Security] Skipping invalid contact code:', code);
+      continue;
+    }
+    
     const li = document.createElement("li");
     li.className = "contact-item" + (code === activeContact ? " active" : "") + (!c.saved ? " unsaved" : "");
-    li.dataset.code = code;
+    li.dataset.code = escapeHtmlAttribute(code);
 
     const name = document.createElement("span");
     name.className = "contact-name";
-    name.textContent = c.nickname;
+    name.textContent = c.nickname || code.slice(0, 8) + "…";
 
     const actions = document.createElement("div");
     actions.className = "contact-actions";
@@ -103,16 +242,21 @@ function renderContactList() {
     delBtn.title = "Remove contact";
     delBtn.addEventListener("click", (e) => {
       e.stopPropagation();
-      removeContact(code);
+      if (confirm(`Are you sure you want to remove ${c.nickname}?`)) {
+        removeContact(code);
+      }
     });
     actions.appendChild(delBtn);
 
     li.appendChild(name);
 
     if (c.unread > 0) {
+      // Limitar el número de notificaciones no leídas mostradas
+      const unreadCount = Math.min(c.unread, 99);
       const badge = document.createElement("span");
       badge.className = "unread-badge";
-      badge.textContent = c.unread;
+      badge.textContent = unreadCount;
+      badge.setAttribute("aria-label", `${unreadCount} unread messages`);
       li.appendChild(badge);
     }
 
@@ -124,12 +268,16 @@ function renderContactList() {
 
 // ── Conversation ──────────────────────────────────────────────────────────────
 async function openConversation(code) {
+  if (!isValidUserCode(code)) {
+    console.error('[Security] Invalid code when opening conversation:', code);
+    return;
+  }
+  
   activeContact = code;
   const contact = contacts.get(code);
   contact.unread = 0;
   renderContactList();
 
-  // Show chat UI
   document.getElementById("chat-placeholder").hidden = true;
   document.getElementById("messages").hidden = false;
   document.getElementById("message-form").hidden = false;
@@ -137,7 +285,6 @@ async function openConversation(code) {
   document.getElementById("chat-contact-name").textContent = contact.nickname;
   clearTyping();
 
-  // Reset file preview and progress
   document.getElementById("file-send").value = "";
   document.getElementById("file-preview-img").hidden = true;
   document.getElementById("file-preview-img").src = "";
@@ -145,14 +292,12 @@ async function openConversation(code) {
   document.getElementById("file-preview").hidden = true;
   hideProgress();
 
-  // Render stored messages
   const msgEl = document.getElementById("messages");
   msgEl.innerHTML = "";
   for (const msg of messages.get(code) || []) {
     appendMessageElement(msg.from, msg.text);
   }
 
-  // Initiate key exchange if no shared key yet
   if (!contact.sharedKey) {
     contact.keyPair = await GhostCrypto.generateKeyPair();
     const pub = await GhostCrypto.exportPublicKey(contact.keyPair.publicKey);
@@ -171,6 +316,12 @@ function showPlaceholder() {
 
 // ── WebSocket message handler ─────────────────────────────────────────────────
 async function handleMessage(data) {
+  // Validar tipo de mensaje recibido
+  if (!data || !data.type) {
+    console.warn('[Security] Invalid message received:', data);
+    return;
+  }
+  
   switch (data.type) {
 
     case "registered":
@@ -197,8 +348,12 @@ async function handleMessage(data) {
 
     case "key_exchange": {
       const from = data.from;
+      
+      if (!isValidUserCode(from)) {
+        console.error('[Security] Invalid code in key_exchange:', from);
+        break;
+      }
 
-      // If unknown, add as temporary contact so the conversation can happen
       if (!contacts.has(from)) {
         contacts.set(from, { nickname: from.slice(0, 8) + "…", keyPair: null, sharedKey: null, unread: 0, saved: false });
         messages.set(from, []);
@@ -207,7 +362,6 @@ async function handleMessage(data) {
 
       const contact = contacts.get(from);
 
-      // Respond with our public key if we haven't sent one yet
       if (!contact.keyPair) {
         contact.keyPair = await GhostCrypto.generateKeyPair();
         const pub = await GhostCrypto.exportPublicKey(contact.keyPair.publicKey);
@@ -215,18 +369,33 @@ async function handleMessage(data) {
       }
 
       const peerPublicKey = await GhostCrypto.importPublicKey(data.payload);
-      contact.sharedKey = await GhostCrypto.deriveSharedKey(contact.keyPair.privateKey, peerPublicKey);
+      const { key, fingerprint } = await GhostCrypto.deriveSharedKey(contact.keyPair.privateKey, contact.keyPair.publicKey, peerPublicKey);
+      contact.sharedKey = key;
 
-      if (activeContact === from) appendStatus("E2E encryption activated");
+      if (activeContact === from) appendStatus(`E2E encryption activated · Fingerprint: ${sanitizeInput(fingerprint)}`);
       break;
     }
 
     case "sended": {
       const from = data.from;
+      
+      if (!isValidUserCode(from)) {
+        console.error('[Security] Invalid code in sended:', from);
+        break;
+      }
+      
       const contact = contacts.get(from);
       if (!contact || !contact.sharedKey) break;
 
       const text = await GhostCrypto.decrypt(contact.sharedKey, data.nonce, data.payload);
+      
+      // Validar mensaje desencriptado
+      const validation = validateMessageText(text);
+      if (!validation.valid) {
+        console.warn('[Security] Invalid message text received:', validation.error);
+        break;
+      }
+      
       messages.get(from).push({ from, text, timestamp: data.timestamp });
 
       if (activeContact === from) {
@@ -244,18 +413,25 @@ async function handleMessage(data) {
       if (!contact?.sharedKey) break;
       const metaStr = await GhostCrypto.decrypt(contact.sharedKey, data.nonce, data.payload);
       const meta = JSON.parse(metaStr);
+      const timeoutId = setTimeout(() => {
+        if (incomingTransfers.has(data.transferId)) {
+          incomingTransfers.delete(data.transferId);
+          appendStatus(`Incoming file "${sanitizeInput(meta.name)}" timed out`);
+          hideProgress();
+        }
+        const qi = incomingFileQueue.findIndex(e => e.transferId === data.transferId);
+        if (qi !== -1) incomingFileQueue.splice(qi, 1);
+      }, TRANSFER_TIMEOUT_MS);
       incomingTransfers.set(data.transferId, {
-        name: meta.name, size: meta.size, mime: meta.mime,
-        from: data.from, chunks: [], received: 0, total: null,
+        name: sanitizeInput(meta.name), size: meta.size, mime: sanitizeInput(meta.mime),
+        from: data.from, chunks: [], received: 0, total: null, timeoutId,
       });
-      const senderName = contact.nickname ?? data.from.slice(0, 8) + "…";
-      document.getElementById("file-incoming-sender").textContent = `From: ${senderName}`;
-      document.getElementById("file-incoming-info").textContent =
-        `${meta.name}  (${formatFileSize(meta.size)})`;
       const modal = document.getElementById("file-incoming-modal");
-      modal.dataset.transferId = data.transferId;
-      modal.dataset.from = data.from;
-      modal.hidden = false;
+      if (!modal.hidden) {
+        incomingFileQueue.push({ transferId: data.transferId, from: data.from, meta });
+      } else {
+        _showIncomingFileModal(data.transferId, data.from, meta, contact);
+      }
       break;
     }
 
@@ -268,10 +444,11 @@ async function handleMessage(data) {
       const chunkBytes = await GhostCrypto.decryptBytes(contact.sharedKey, data.nonce, data.payload);
       transfer.chunks[data.index] = chunkBytes;
       transfer.received++;
-      showProgress(`Receiving ${transfer.name}`, (transfer.received / transfer.total) * 100);
+      showProgress(`Receiving ${sanitizeInput(transfer.name)}`, (transfer.received / transfer.total) * 100);
       if (transfer.received === transfer.total) {
+        clearTimeout(transfer.timeoutId);
         triggerDownload(transfer.chunks, transfer.name, transfer.mime);
-        appendStatus(`File "${transfer.name}" received`);
+        appendStatus(`File "${sanitizeInput(transfer.name)}" received`);
         hideProgress();
         incomingTransfers.delete(data.transferId);
       }
@@ -285,6 +462,7 @@ async function handleMessage(data) {
     case "file_reject": {
       const transfer = outgoingTransfers.get(data.transferId);
       if (transfer) {
+        clearTimeout(transfer.timeoutId);
         appendStatus("File transfer rejected");
         outgoingTransfers.delete(data.transferId);
         hideProgress();
@@ -301,7 +479,7 @@ async function handleMessage(data) {
       break;
 
     case "error":
-      if (activeContact) appendStatus(`Error: ${data.message}`);
+      if (activeContact) appendStatus(`Error: ${sanitizeInput(data.message)}`);
       break;
   }
 }
@@ -337,14 +515,12 @@ document.addEventListener("DOMContentLoaded", () => {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   WS.connect(`${protocol}//${window.location.host}/ws`);
 
-  // Send message or file
   document.getElementById("message-form").addEventListener("submit", async (e) => {
     e.preventDefault();
     if (!activeContact) return;
     const contact = contacts.get(activeContact);
     if (!contact?.sharedKey) return;
 
-    // File takes priority when selected
     const fileInput = document.getElementById("file-send");
     if (fileInput.files[0]) {
       const file = fileInput.files[0];
@@ -353,12 +529,18 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
       const transferId = generateTransferId();
-      outgoingTransfers.set(transferId, { file, to: activeContact });
+      const outTimeoutId = setTimeout(() => {
+        if (outgoingTransfers.has(transferId)) {
+          outgoingTransfers.delete(transferId);
+          appendStatus(`File "${sanitizeInput(file.name)}" transfer timed out`);
+          hideProgress();
+        }
+      }, TRANSFER_TIMEOUT_MS);
+      outgoingTransfers.set(transferId, { file, to: activeContact, timeoutId: outTimeoutId });
       const meta = JSON.stringify({ name: file.name, size: file.size, mime: file.type });
       const enc = await GhostCrypto.encrypt(contact.sharedKey, meta);
-      WS.send({ type: "file_meta", to: activeContact, transferId, payload: enc.ciphertext, nonce: enc.nonce });
+      WS.send({ type: "file_meta", to: activeContact, transferId, payload: enc.ciphertext, nonce: enc.nonce, size: file.size });
       showProgress("Waiting for acceptance…", 0);
-      // Clear file preview
       fileInput.value = "";
       document.getElementById("file-preview-img").hidden = true;
       document.getElementById("file-preview-img").src = "";
@@ -369,10 +551,20 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const input = document.getElementById("message-input");
     const text = input.value.trim();
-    if (!text) return;
-
+    
+    // Validar mensaje antes de enviar
+    const validation = validateMessageText(text);
+    if (!validation.valid) {
+      appendStatus(`Error: ${validation.error}`);
+      return;
+    }
+    
     const encrypted = await GhostCrypto.encrypt(contact.sharedKey, text);
-    WS.send({ type: "text", to: activeContact, payload: encrypted.ciphertext, nonce: encrypted.nonce, timestamp: Date.now() });
+    const sent = WS.send({ type: "text", to: activeContact, payload: encrypted.ciphertext, nonce: encrypted.nonce, timestamp: Date.now() });
+    if (!sent) {
+      appendStatus("Not connected — message not sent");
+      return;
+    }
     messages.get(activeContact).push({ from: "You", text, timestamp: Date.now() });
     appendMessageElement("You", text);
     input.value = "";
@@ -386,7 +578,8 @@ document.addEventListener("DOMContentLoaded", () => {
     modal.hidden = true;
     WS.send({ type: "file_accept", to: from, transferId });
     const transfer = incomingTransfers.get(transferId);
-    if (transfer) showProgress(`Receiving ${transfer.name}`, 0);
+    if (transfer) showProgress("Receiving file...", 0);
+    _showNextIncomingFile();
   });
 
   // File incoming: reject
@@ -396,7 +589,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const from = modal.dataset.from;
     modal.hidden = true;
     WS.send({ type: "file_reject", to: from, transferId });
+    const transfer = incomingTransfers.get(transferId);
+    if (transfer) clearTimeout(transfer.timeoutId);
     incomingTransfers.delete(transferId);
+    _showNextIncomingFile();
   });
 
   // Typing indicator (debounced)
@@ -412,7 +608,7 @@ document.addEventListener("DOMContentLoaded", () => {
     typingCooldown = setTimeout(() => { typingSent = false; }, 2000);
   });
 
-  // Copy ID — with context message so the recipient understands what it is
+  // Copy ID — includes a human-readable prefix so the recipient knows what it is
   document.getElementById("btn-copy").addEventListener("click", () => {
     if (id) navigator.clipboard.writeText(`Mi id de Ghostchat Messenger es: ${id}`);
   });
@@ -435,7 +631,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Refresh ID
   document.getElementById("btn-refresh").addEventListener("click", () => {
-    WS.refreshId();
+    if (confirm("Are you sure you want to refresh your ID? This will disconnect all conversations.")) {
+      WS.refreshId();
+    }
   });
 
   // Theme toggle
@@ -462,7 +660,23 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("add-contact-confirm").addEventListener("click", () => {
     const code = document.getElementById("add-contact-code").value.trim();
     const nickname = document.getElementById("add-contact-nickname").value.trim();
-    if (!code) return;
+    
+    if (!code) {
+      appendStatus("Please enter a contact code");
+      return;
+    }
+    
+    // Validar código antes de añadir
+    if (!isValidUserCode(code)) {
+      appendStatus("Error: Invalid contact code format. Use only letters and numbers.");
+      return;
+    }
+    
+    if (nickname && !isValidNickname(nickname)) {
+      appendStatus("Error: Invalid nickname");
+      return;
+    }
+    
     addContact(code, nickname || code.slice(0, 8) + "…");
     document.getElementById("add-contact-modal").hidden = true;
   });
@@ -483,9 +697,27 @@ document.addEventListener("DOMContentLoaded", () => {
     const file = fileInput.files[0];
     if (!file) return;
 
-    filePreviewName.textContent = `${file.name} (${formatFileSize(file.size)})`;
+    // Validar nombre de archivo
+    if (file.name.length > 200) {
+      appendStatus("Error: Filename too long (max 200 characters)");
+      fileInput.value = "";
+      return;
+    }
+    
+    // Verificar tipo de archivo peligroso
+    const dangerousExtensions = ['.exe', '.bat', '.cmd', '.sh', '.js', '.vbs'];
+    const fileExt = file.name.toLowerCase().split('.').pop();
+    if (dangerousExtensions.includes('.' + fileExt)) {
+      const proceed = confirm("Warning: This file type could be dangerous. Send anyway?");
+      if (!proceed) {
+        fileInput.value = "";
+        return;
+      }
+    }
+    
+    filePreviewName.textContent = `${sanitizeInput(file.name)} (${formatFileSize(file.size)})`;
 
-    if (file.type.startsWith("image/")) {
+    if (file.type && file.type.startsWith("image/")) {
       const reader = new FileReader();
       reader.onload = (e) => {
         filePreviewImg.src = e.target.result;
@@ -516,9 +748,11 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 
+
 // ── UI helpers ────────────────────────────────────────────────────────────────
 function showTyping(from) {
-  document.getElementById("typing-indicator").textContent = `${contacts.get(from)?.nickname ?? from.slice(0, 8)} is typing…`;
+  const contactName = contacts.get(from)?.nickname ?? from.slice(0, 8) + "…";
+  document.getElementById("typing-indicator").textContent = `${sanitizeInput(contactName)} is typing…`;
   clearTimeout(typingHideTimeout);
   typingHideTimeout = setTimeout(clearTyping, 3000);
 }
@@ -533,7 +767,12 @@ function appendMessageElement(from, text) {
   const isSelf = from === "You";
   div.className = isSelf ? "msg msg-sent" : "msg msg-received";
   const label = isSelf ? "You" : (contacts.get(from)?.nickname ?? from.slice(0, 8) + "…");
-  div.textContent = `${label}: ${text}`;
+  
+  // Sanitizar todo el contenido
+  const sanitizedLabel = sanitizeInput(label);
+  const sanitizedText = sanitizeInput(text);
+  
+  div.textContent = `${sanitizedLabel}: ${sanitizedText}`;
   msgs.appendChild(div);
   msgs.scrollTop = msgs.scrollHeight;
 }
@@ -541,7 +780,7 @@ function appendMessageElement(from, text) {
 function appendStatus(text) {
   const msgs = document.getElementById("messages");
   const div = document.createElement("div");
-  div.textContent = text;
+  div.textContent = sanitizeInput(text);
   div.className = "msg msg-system";
   msgs.appendChild(div);
   msgs.scrollTop = msgs.scrollHeight;
@@ -562,7 +801,7 @@ function formatFileSize(bytes) {
 
 function showProgress(label, pct) {
   document.getElementById("file-progress").hidden = false;
-  document.getElementById("file-progress-label").textContent = label;
+  document.getElementById("file-progress-label").textContent = sanitizeInput(label);
   document.getElementById("file-progress-fill").style.width = `${pct}%`;
   document.getElementById("file-progress-pct").textContent = `${Math.round(pct)}%`;
 }
@@ -587,22 +826,48 @@ async function startChunkedSend(transferId) {
     const slice = new Uint8Array(buffer, start, Math.min(CHUNK_SIZE, file.size - start));
     const enc = await GhostCrypto.encryptBytes(contact.sharedKey, slice);
     WS.send({ type: "file_chunk", to, transferId, index: i, total, payload: enc.ciphertext, nonce: enc.nonce });
-    showProgress(`Sending ${file.name}`, ((i + 1) / total) * 100);
-    // Yield to keep UI responsive between chunks
+    showProgress(`Sending ${sanitizeInput(file.name)}`, ((i + 1) / total) * 100);
+    // Yield the event loop between chunks to keep the UI responsive
     await new Promise(r => setTimeout(r, 0));
   }
 
-  appendStatus(`File "${file.name}" sent`);
+  clearTimeout(transfer.timeoutId);
+  appendStatus(`File "${sanitizeInput(file.name)}" sent`);
   hideProgress();
   outgoingTransfers.delete(transferId);
 }
 
 function triggerDownload(chunks, name, mime) {
+  // Validar nombre de archivo
+  const sanitizedName = sanitizeInput(name).replace(/[^a-zA-Z0-9._-]/g, '_');
+  
   const blob = new Blob(chunks, { type: mime || "application/octet-stream" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = name;
+  a.download = sanitizedName.substring(0, 100); // Limitar longitud
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+function _showIncomingFileModal(transferId, from, meta, contact) {
+  const senderName = contact?.nickname ?? from.slice(0, 8) + "…";
+  document.getElementById("file-incoming-sender").textContent = `From: ${sanitizeInput(senderName)}`;
+  document.getElementById("file-incoming-info").textContent =
+    `${sanitizeInput(meta.name)}  (${formatFileSize(meta.size)})`;
+  const modal = document.getElementById("file-incoming-modal");
+  modal.dataset.transferId = escapeHtmlAttribute(transferId);
+  modal.dataset.from = escapeHtmlAttribute(from);
+  modal.hidden = false;
+}
+
+function _showNextIncomingFile() {
+  if (incomingFileQueue.length === 0) return;
+  const { transferId, from, meta } = incomingFileQueue.shift();
+  if (!incomingTransfers.has(transferId)) {
+    _showNextIncomingFile();
+    return;
+  }
+  const contact = contacts.get(from);
+  _showIncomingFileModal(transferId, from, meta, contact);
 }

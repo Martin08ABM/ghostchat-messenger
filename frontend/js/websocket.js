@@ -36,7 +36,9 @@ function _createSocket() {
 function send(data) {
   if (websocket && websocket.readyState === WebSocket.OPEN) {
     websocket.send(JSON.stringify(data));
+    return true;
   }
+  return false;
 }
 
 function register() { send({ type: "register" }); }

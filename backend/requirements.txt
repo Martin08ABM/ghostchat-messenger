@@ -1,4 +1,8 @@
 fastapi
-uvicorn
 uvicorn[standard]
 aiosqlite
+pydantic
+pydantic[email]
+python-multipart
+structlog
+starlette

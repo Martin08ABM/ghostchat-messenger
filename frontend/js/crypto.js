@@ -22,7 +22,8 @@ async function importPublicKey(base64Key) {
   return await window.crypto.subtle.importKey("raw", binaryKey, {name: "ECDH", namedCurve: "P-256"}, true, [])
 }
 
-async function deriveSharedKey(privateKey, peerPublicKey) {
+// Returns { key, fingerprint } where fingerprint is a hex string for out-of-band verification
+async function deriveSharedKey(privateKey, ownPublicKey, peerPublicKey) {
   // Step 1: Extract raw ECDH shared secret
   const rawBits = await window.crypto.subtle.deriveBits(
     { name: "ECDH", public: peerPublicKey },
@@ -36,22 +37,43 @@ async function deriveSharedKey(privateKey, peerPublicKey) {
     rawBits,
     { name: "HKDF" },
     false,
-    ["deriveKey"]
+    ["deriveKey", "deriveBits"]
   );
 
-  // Step 3: Derive AES-256-GCM key via HKDF-SHA256
-  return await window.crypto.subtle.deriveKey(
-    {
-      name: "HKDF",
-      hash: "SHA-256",
-      salt: new Uint8Array(32),
-      info: new TextEncoder().encode("GhostChat E2E")
-    },
+  // Step 3: Derive salt from both public keys (sorted so both sides compute the same salt)
+  const ownRaw  = new Uint8Array(await window.crypto.subtle.exportKey("raw", ownPublicKey));
+  const peerRaw = new Uint8Array(await window.crypto.subtle.exportKey("raw", peerPublicKey));
+  const [first, second] = [ownRaw, peerRaw].sort((a, b) => {
+    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] - b[i];
+    return 0;
+  });
+  const combined = new Uint8Array(first.length + second.length);
+  combined.set(first);
+  combined.set(second, first.length);
+  const salt = new Uint8Array(await window.crypto.subtle.digest("SHA-256", combined));
+
+  const hkdfParams = { name: "HKDF", hash: "SHA-256", salt };
+
+  // Step 4: Derive AES-256-GCM encryption key
+  const key = await window.crypto.subtle.deriveKey(
+    { ...hkdfParams, info: new TextEncoder().encode("GhostChat E2E") },
     hkdfKeyMaterial,
     { name: "AES-GCM", length: 256 },
     false,
     ["encrypt", "decrypt"]
   );
+
+  // Step 5: Derive a short fingerprint for manual out-of-band verification
+  const fpBits = await window.crypto.subtle.deriveBits(
+    { ...hkdfParams, info: new TextEncoder().encode("GhostChat Fingerprint") },
+    hkdfKeyMaterial,
+    64
+  );
+  const fingerprint = Array.from(new Uint8Array(fpBits))
+    .map(b => b.toString(16).padStart(2, "0"))
+    .join(":");
+
+  return { key, fingerprint };
 }
 
 // Pad plaintext to a multiple of PADDING_BLOCK bytes to hide message length from the server.

@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(inkscape --version)",
+      "Bash(convert --version)",
+      "Bash(convert -background none /home/martin/Proyectos/ghostchat-messenger/frontend/icons/concept-1.svg -resize 192x192 /home/martin/Proyectos/ghostchat-messenger/frontend/icons/icon-192.png)",
+      "Bash(convert -background none /home/martin/Proyectos/ghostchat-messenger/frontend/icons/concept-2.svg -resize 512x512 /home/martin/Proyectos/ghostchat-messenger/frontend/icons/icon-512.png)",
+      "Bash(python:*)",
+      "Bash(python3 -c \"import ast; ast.parse\\(open\\('backend/main.py'\\).read\\(\\)\\); print\\('main.py OK'\\)\")",
+      "Bash(python3 -c \"import ast; ast.parse\\(open\\('backend/config.py'\\).read\\(\\)\\); print\\('config.py OK'\\)\")",
+      "Bash(node --input-type=module)",
+      "Bash(echo \"exit: $?\")"
+    ]
+  }
+}
